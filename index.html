@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Chess Game</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f0f0f0; display: flex; justify-content: center; padding: 20px; }
+    .container { display: flex; flex-direction: column; align-items: center; }
+    .player-info { display: flex; justify-content: space-between; width: 480px; margin: 10px 0; font-size: 18px; }
+    .board { display: grid; grid-template-columns: repeat(8, 60px); grid-template-rows: repeat(8, 60px); border: 2px solid #333; }
+    .square { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 32px; cursor: pointer; }
+    .light { background: #eee; } .dark { background: #999; }
+    .square.selected { outline: 3px solid yellow; } .square.highlight { background-color: rgba(0,255,0,0.3); }
+    .sidebar { width: 150px; margin-left: 20px; background: #fff; border: 1px solid #333; padding: 10px; height: 400px; overflow-y: auto; }
+    .menu { margin-top: 20px; }
+    .popup { position: fixed; top: 20%; left: 35%; background: white; padding: 20px; border: 2px solid #333; z-index: 10; width: 300px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+  </style>
+</head>
+<body>
+  <!-- Startup Popup -->
+  <div id="start-popup" class="popup">
+    <h2>Start New Game</h2>
+    <label>Game Mode:
+      <select id="game-mode"><option value="ai">AI vs Player</option><option value="pvp">Player vs Player</option></select>
+    </label>
+    <label>Board Side:
+      <select id="board-side"><option value="white">White</option><option value="black">Black</option></select>
+    </label>
+    <label>Player 1 Name: <input type="text" id="player1-name"/></label>
+    <label id="player2-label">Player 2 Name: <input type="text" id="player2-name"/></label>
+    <label>Time Control:
+      <select id="time-control"><option value="600">10 minutes</option><option value="300">5 minutes</option></select>
+    </label>
+    <div id="difficulty-section">
+      <label>Difficulty:
+        <select id="difficulty"><option value="1">Easy</option><option value="2">Medium</option><option value="3">Hard</option></select>
+      </label>
+    </div>
+    <button onclick="startGame()">Start Game</button>
+  </div>
+
+  <!-- Player Info -->
+  <div class="container">
+    <div class="player-info top">
+      <div class="avatar">👤</div><div class="name" id="white-name">White</div><div class="timer" id="white-timer">10:00</div>
+    </div>
+    <div class="board" id="chess-board"></div>
+    <div class="player-info bottom">
+      <div class="avatar">👤</div><div class="name" id="black-name">Black</div><div class="timer" id="black-timer">10:00</div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar"><h3>Move History</h3><ol id="move-history"></ol></div>
+
+  <!-- Menu -->
+  <div class="menu">
+    <button onclick="undoMove()">Undo</button>
+    <button onclick="resetGame()">Reset</button>
+    <button onclick="offerDraw()">Draw</button>
+    <button onclick="resign()">Resign</button>
+  </div>
+
+  <!-- End Popup -->
+  <div id="end-popup" class="popup" style="display:none;">
+    <h2 id="winner-text"></h2>
+    <button onclick="resetGame()">Play Again</button>
+    <button onclick="exitGame()">Exit</button>
+  </div>
+
+<script>
+const PIECE_SYMBOLS = {
+  'P':'♙','R':'♖','N':'♘','B':'♗','Q':'♕','K':'♔',
+  'p':'♟','r':'♜','n':'♞','b':'♝','q':'♛','k':'♚'
+};
+
+const boardEl = document.getElementById('chess-board');
+let selectedSquare = null;
+let gameSettings = {};
+
+function renderBoard(fen) {
+  boardEl.innerHTML = '';
+  const rows = fen.split(' ')[0].split('/');
+  rows.forEach((row,i)=>{
+    let col=0;
+    for(const char of row){
+      if(isNaN(char)){
+        const sq=document.createElement('div');
+        sq.className=`square ${(i+col)%2===0?'light':'dark'}`;
+        sq.textContent=PIECE_SYMBOLS[char]||'';
+        sq.dataset.square=`${String.fromCharCode(97+col)}${8-i}`;
+        sq.onclick=()=>selectSquare(sq.dataset.square);
+        boardEl.appendChild(sq); col++;
+      } else {
+        for(let j=0;j<parseInt(char);j++){
+          const sq=document.createElement('div');
+          sq.className=`square ${(i+col)%2===0?'light':'dark'}`;
+          sq.dataset.square=`${String.fromCharCode(97+col)}${8-i}`;
+          sq.onclick=()=>selectSquare(sq.dataset.square);
+          boardEl.appendChild(sq); col++;
+        }
+      }
+    }
+  });
+}
+
+function selectSquare(square){
+  clearHighlights();
+  const sqEl=document.querySelector(`[data-square='${square}']`);
+  sqEl.classList.add('selected');
+  if(selectedSquare){
+    // Attempt move
+    const move = selectedSquare + square;
+    fetch('/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({move})})
+      .then(res=>res.json()).then(data=>{
+        if(data.status==='ok'){
+          renderBoard(data.fen);
+          updateMoveHistory(data.move);
+          checkStatus(data.fen);
+          if(gameSettings.mode==='ai'){
+            aiMove();
+          }
+        }
+      });
+    selectedSquare=null;
+  } else {
+    selectedSquare=square;
+  }
+}
+
+function clearHighlights(){document.querySelectorAll('.square').forEach(sq=>sq.classList.remove('selected','highlight'));}
+
+function updateMoveHistory(move){const li=document.createElement('li');li.textContent=move;document.getElementById('move-history').appendChild(li);}
+
+function startGame(){
+  const mode=document.getElementById('game-mode').value;
+  const player1=document.getElementById('player1-name').value||"White";
+  const player2=document.getElementById('player2-name').value||"Black";
+  const difficulty=parseInt(document.getElementById('difficulty').value);
+  gameSettings={mode,difficulty};
+  document.getElementById('white-name').textContent=player1;
+  document.getElementById('black-name').textContent=player2;
+  document.getElementById('start-popup').style.display='none';
+  resetGame();
+}
+
+function aiMove(){
+  fetch('/ai-move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({difficulty:gameSettings.difficulty})})
+    .then(res=>res.json()).then(data=>{
+      if(data.status==='ok'){
+        renderBoard(data.fen);
+        updateMoveHistory(data.move);
+        checkStatus(data.fen);
+      }
+    });
+}
+
+let whiteTime, blackTime, timerInterval, currentTurn = 'w';
+
+function startTimers(baseTime) {
+  whiteTime = baseTime;
+  blackTime = baseTime;
+  updateTimerDisplay();
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(tick, 1000);
+}
+
+function tick() {
+  if (currentTurn === 'w') {
+    whiteTime--;
+    if (whiteTime <= 0) { showEndPopup("Black wins on time"); clearInterval(timerInterval); }
+  } else {
+    blackTime--;
+    if (blackTime <= 0) { showEndPopup("White wins on time"); clearInterval(timerInterval); }
+  }
+  updateTimerDisplay();
+}
+
+function updateTimerDisplay() {
+  document.getElementById('white-timer').textContent = formatTime(whiteTime);
+  document.getElementById('black-timer').textContent = formatTime(blackTime);
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds/60).toString().padStart(2,'0');
+  const s = (seconds%60).toString().padStart(2,'0');
+  return `${m}:${s}`;
+}
+
+// Switch turn after each move
+function switchTurn() {
+  currentTurn = (currentTurn === 'w') ? 'b' : 'w';
+}
+
+function undoMove(){fetch('/undo').then(res=>res.json()).then(data=>renderBoard(data.fen));}
+function resetGame(){fetch('/reset').then(res=>res.json()).then(data=>{renderBoard(data.fen);document.getElementById('end-popup').style.display='none';});}
+function offerDraw(){alert("Draw offered!");}
+function resign(){showEndPopup("Opponent wins by resignation");}
+function showEndPopup(winner){document.getElementById('winner-text').textContent=`Winner: ${winner}`;document.getElementById('end-popup').style.display='block';}
+function exitGame(){window.location.reload();}
+
+function checkStatus(fen){
+  fetch('/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fen})})
+    .then(res=>res.json()).then(data=>{
+      if(data.check) alert("Check!");
+      if(data.checkmate) showEndPopup(data.winner);
+    });
+}
+</script>
