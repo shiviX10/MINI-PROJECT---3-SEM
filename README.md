@@ -1,2 +1,25 @@
 # MINI-PROJECT---3-SEM
-AI CHESS/CHECKER
+MINIMAX AI CHESS is a basic Three level difficulty Chess game ...
+
+Created in two ways 
+1. HTML + CSS + JavaScript + Flask + Minimax AI
+2. Python tkinter + Minimax AI
+
+Chess Engine is on Minimax Algorithm with alpha beta pruning 
+
+The Chess GUI is on 1. TKinter GUI  
+                    2. HTML,CSS and JavaScript
+
+The game Backend is on Python tkinter and Flask ....
+
+Requirements to Run the game ...
+Python 3.14 
+pip install flask...
+
+
+And here we go ...
+
+
+This is basic Implementation and Representation of Minimax Algorithm with ALpha-beta pruning ...
+this project is specially for the beginners student of Artificial Intelligence and Machine learning ...
+to know how to apply the AI Algroithm in a application ...
